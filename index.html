@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lua Runner</title>
+  <title>Multi-Language Code Runner</title>
+
   <style>
     * {
       box-sizing: border-box;
@@ -33,6 +34,35 @@
       margin-bottom: 20px;
     }
 
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      margin: 0;
+      padding: 11px 18px;
+      border: 1px solid #354052;
+      border-radius: 8px;
+      background: #181d27;
+      color: #cbd5e1;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .tab:hover {
+      background: #252d3b;
+    }
+
+    .tab.active {
+      background: #66d9ef;
+      color: #10131a;
+      border-color: #66d9ef;
+    }
+
     textarea {
       width: 100%;
       height: 360px;
@@ -52,7 +82,7 @@
       border-color: #66d9ef;
     }
 
-    button {
+    button#runButton {
       margin-top: 14px;
       padding: 12px 22px;
       border: none;
@@ -64,11 +94,11 @@
       cursor: pointer;
     }
 
-    button:hover {
+    button#runButton:hover {
       background: #8be9fd;
     }
 
-    button:active {
+    button#runButton:active {
       transform: scale(0.98);
     }
 
@@ -78,8 +108,10 @@
       color: #a6e22e;
     }
 
-    pre {
-      min-height: 150px;
+    pre,
+    iframe {
+      width: 100%;
+      min-height: 180px;
       margin: 0;
       padding: 16px;
       border-radius: 10px;
@@ -91,6 +123,12 @@
       color: #f8f8f2;
     }
 
+    iframe {
+      padding: 0;
+      background: white;
+      display: none;
+    }
+
     .error {
       color: #ff6b6b;
     }
@@ -98,42 +136,271 @@
     .success {
       color: #a6e22e;
     }
+
+    .info {
+      color: #f8f8f2;
+    }
+
+    .language-note {
+      margin-top: 10px;
+      color: #8893a3;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Multi-Language Code Runner</h1>
+
+    <p class="description">
+      Choose a language, enter your code, and click Run Code.
+    </p>
+
+    <div class="tabs">
+      <button class="tab active" data-language="javascript">
+        JavaScript
+      </button>
+
+      <button class="tab" data-language="lua">
+        Lua
+      </button>
+
+      <button class="tab" data-language="python">
+        Python
+      </button>
+
+      <button class="tab" data-language="html">
+        HTML Preview
+      </button>
+    </div>
+
+    <textarea id="codeEditor"></textarea>
+
+    <div class="language-note" id="languageNote">
+      JavaScript runs directly in your browser.
+    </div>
+
+    <button id="runButton">Run Code</button>
+
+    <h2 class="output-title">Output</h2>
+
+    <pre id="output">Click "Run Code" to run your code.</pre>
+
+    <iframe id="htmlPreview" title="HTML Preview"></iframe>
+  </div>
+
+  <!-- Fengari runs Lua inside the browser -->
+  <script src="https://unpkg.com/fengari-web/dist/fengari-web.js"></script>
+
+  <!-- Pyodide runs Python inside the browser -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+
+  <script>
+    const codeEditor = document.getElementById("codeEditor");
+    const runButton = document.getElementById("runButton");
+    const output = document.getElementById("output");
+    const htmlPreview = document.getElementById("htmlPreview");
+    const languageNote = document.getElementById("languageNote");
+    const tabs = document.querySelectorAll(".tab");
+
+    let currentLanguage = "javascript";
+    let pyodide = null;
+    let pyodideLoading = false;
+
+    const starterCode = {
+      javascript: `console.log("Hello from JavaScript!");
+
+const number = 10 + 5;
+console.log("The answer is:", number);`,
+
+      lua: `print("Hello from Lua!")
+
+local number = 10 + 5
+print("The answer is: " .. number)`,
+
+      python: `print("Hello from Python!")
+
+number = 10 + 5
+print("The answer is:", number)`,
+
+      html: `<!DOCTYPE html>
+<html>
+<head>
+  <title>My Preview</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      background: white;
+      color: #222;
+    }
+
+    h1 {
+      color: #2563eb;
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Lua Code Runner</h1>
-<p class="description">
-  Type Lua code below, click Run Lua, and view the output or any errors.
-</p>
+  <h1>Hello from HTML!</h1>
+  <p>This page is being previewed inside the runner.</p>
+</body>
+</html>`
+    };
 
-<textarea id="luaCode">print("Hello from Lua!")
+    codeEditor.value = starterCode.javascript;
 
-local number = 10 + 5
-print("The answer is: " .. number)</textarea>
-<br />
+    tabs.forEach(function(tab) {
+      tab.addEventListener("click", function() {
+        switchLanguage(tab.dataset.language);
+      });
+    });
 
-<button id="runButton">Run Lua</button>
+    runButton.addEventListener("click", runCode);
 
-<h2 class="output-title">Output</h2>
-<pre id="output">Click "Run Lua" to run your code.</pre>
+    function switchLanguage(language) {
+      currentLanguage = language;
 
-  </div>
-  <!-- Fengari runs Lua inside the browser -->
-  <script src="https://unpkg.com/fengari-web/dist/fengari-web.js"></script>
-  <script>
-    const luaCode = document.getElementById("luaCode");
-    const runButton = document.getElementById("runButton");
-    const output = document.getElementById("output");
+      tabs.forEach(function(tab) {
+        tab.classList.toggle(
+          "active",
+          tab.dataset.language === language
+        );
+      });
 
-    runButton.addEventListener("click", runLua);
+      codeEditor.value = starterCode[language];
 
-    function runLua() {
-      const code = luaCode.value;
-      let printedOutput = "";
+      output.className = "info";
+      output.textContent =
+        "Click \"Run Code\" to run your " +
+        getLanguageName(language) +
+        " code.";
+
+      htmlPreview.style.display = "none";
+      output.style.display = "block";
+
+      if (language === "javascript") {
+        languageNote.textContent =
+          "JavaScript runs directly in your browser.";
+      } else if (language === "lua") {
+        languageNote.textContent =
+          "Lua runs in your browser using Fengari.";
+      } else if (language === "python") {
+        languageNote.textContent =
+          "Python runs in your browser using Pyodide. The first run may take a moment.";
+      } else if (language === "html") {
+        languageNote.textContent =
+          "HTML is shown in the preview window below.";
+      }
+    }
+
+    function getLanguageName(language) {
+      if (language === "javascript") return "JavaScript";
+      if (language === "lua") return "Lua";
+      if (language === "python") return "Python";
+      if (language === "html") return "HTML";
+      return language;
+    }
+
+    async function runCode() {
+      const code = codeEditor.value;
 
       output.className = "";
       output.textContent = "";
+      htmlPreview.style.display = "none";
+      output.style.display = "block";
+
+      if (!code.trim()) {
+        output.className = "error";
+        output.textContent = "Please enter some code first.";
+        return;
+      }
+
+      if (currentLanguage === "javascript") {
+        runJavaScript(code);
+      } else if (currentLanguage === "lua") {
+        runLua(code);
+      } else if (currentLanguage === "python") {
+        await runPython(code);
+      } else if (currentLanguage === "html") {
+        runHTML(code);
+      }
+    }
+
+    function runJavaScript(code) {
+      let printedOutput = "";
+      const originalLog = console.log;
+      const originalError = console.error;
+      const originalWarn = console.warn;
+
+      function addOutput(values) {
+        printedOutput += values.map(function(value) {
+          return convertValueToText(value);
+        }).join("\t") + "\n";
+      }
+
+      try {
+        console.log = function(...values) {
+          addOutput(values);
+        };
+
+        console.error = function(...values) {
+          addOutput(["Error:", ...values]);
+        };
+
+        console.warn = function(...values) {
+          addOutput(["Warning:", ...values]);
+        };
+
+        const result = new Function(code)();
+
+        if (
+          result !== undefined &&
+          printedOutput.trim() === ""
+        ) {
+          printedOutput = convertValueToText(result) + "\n";
+        }
+
+        output.className = "success";
+        output.textContent =
+          printedOutput || "JavaScript finished successfully with no output.";
+      } catch (error) {
+        output.className = "error";
+        output.textContent =
+          "JavaScript Error:\n" + error.message;
+      } finally {
+        console.log = originalLog;
+        console.error = originalError;
+        console.warn = originalWarn;
+      }
+    }
+
+    function convertValueToText(value) {
+      if (typeof value === "string") {
+        return value;
+      }
+
+      if (value === null) {
+        return "null";
+      }
+
+      if (value === undefined) {
+        return "undefined";
+      }
+
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      }
+
+      return String(value);
+    }
+
+    function runLua(code) {
+      let printedOutput = "";
 
       try {
         const lua = fengari.lua;
@@ -150,8 +417,7 @@ print("The answer is: " .. number)</textarea>
 
         lualib.luaL_openlibs(state);
 
-        // Capture Lua print() output and display it on the page.
-        lua.lua_pushjsfunction(state, function (luaState) {
+        lua.lua_pushjsfunction(state, function(luaState) {
           const argumentCount = lua.lua_gettop(luaState);
           const values = [];
 
@@ -174,7 +440,6 @@ print("The answer is: " .. number)</textarea>
           to_luastring("print")
         );
 
-        // Compile the Lua code.
         const loadResult = lauxlib.luaL_loadstring(
           state,
           to_luastring(code)
@@ -189,7 +454,6 @@ print("The answer is: " .. number)</textarea>
           throw new Error(errorMessage);
         }
 
-        // Run the compiled Lua code.
         const runResult = lua.lua_pcall(
           state,
           0,
@@ -211,8 +475,59 @@ print("The answer is: " .. number)</textarea>
           printedOutput || "Lua finished successfully with no output.";
       } catch (error) {
         output.className = "error";
-        output.textContent = "Lua Error:\n" + error.message;
+        output.textContent =
+          "Lua Error:\n" + error.message;
       }
+    }
+
+    async function runPython(code) {
+      output.className = "info";
+      output.textContent = "Loading Python...";
+
+      try {
+        if (!pyodide) {
+          if (!pyodideLoading) {
+            pyodideLoading = true;
+            pyodide = await loadPyodide();
+          } else {
+            while (!pyodide) {
+              await new Promise(function(resolve) {
+                setTimeout(resolve, 100);
+              });
+            }
+          }
+        }
+
+        let printedOutput = "";
+
+        pyodide.setStdout({
+          batched: function(text) {
+            printedOutput += text + "\n";
+          }
+        });
+
+        pyodide.setStderr({
+          batched: function(text) {
+            printedOutput += text + "\n";
+          }
+        });
+
+        await pyodide.runPythonAsync(code);
+
+        output.className = "success";
+        output.textContent =
+          printedOutput || "Python finished successfully with no output.";
+      } catch (error) {
+        output.className = "error";
+        output.textContent =
+          "Python Error:\n" + error.message;
+      }
+    }
+
+    function runHTML(code) {
+      output.style.display = "none";
+      htmlPreview.style.display = "block";
+      htmlPreview.srcdoc = code;
     }
   </script>
 </body>
