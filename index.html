@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lua Runner</title>
-
   <style>
     * {
       box-sizing: border-box;
@@ -104,27 +103,24 @@
 <body>
   <div class="container">
     <h1>Lua Code Runner</h1>
+<p class="description">
+  Type Lua code below, click Run Lua, and view the output or any errors.
+</p>
 
-    <p class="description">
-      Type Lua code below, click Run Lua, and view the output or any errors.
-    </p>
-
-    <textarea id="luaCode">print("Hello from Lua!")
+<textarea id="luaCode">print("Hello from Lua!")
 
 local number = 10 + 5
 print("The answer is: " .. number)</textarea>
+<br />
 
-    <br />
+<button id="runButton">Run Lua</button>
 
-    <button id="runButton">Run Lua</button>
+<h2 class="output-title">Output</h2>
+<pre id="output">Click "Run Lua" to run your code.</pre>
 
-    <h2 class="output-title">Output</h2>
-    <pre id="output">Click "Run Lua" to run your code.</pre>
   </div>
-
   <!-- Fengari runs Lua inside the browser -->
   <script src="https://unpkg.com/fengari-web/dist/fengari-web.js"></script>
-
   <script>
     const luaCode = document.getElementById("luaCode");
     const runButton = document.getElementById("runButton");
@@ -144,6 +140,7 @@ print("The answer is: " .. number)</textarea>
         const lauxlib = fengari.lauxlib;
         const lualib = fengari.lualib;
         const to_luastring = fengari.to_luastring;
+        const to_jsstring = fengari.to_jsstring;
 
         const state = lauxlib.luaL_newstate();
 
@@ -153,33 +150,46 @@ print("The answer is: " .. number)</textarea>
 
         lualib.luaL_openlibs(state);
 
-        // Replace Lua's print function so its output appears on the page.
-        lua.lua_pushjsfunction(state, function (state) {
-          const argumentCount = lua.lua_gettop(state);
+        // Capture Lua print() output and display it on the page.
+        lua.lua_pushjsfunction(state, function (luaState) {
+          const argumentCount = lua.lua_gettop(luaState);
           const values = [];
 
           for (let i = 1; i <= argumentCount; i++) {
-            values.push(
-              fengari.lua_tojsstring(state, i)
-            );
+            const value = lua.lua_tostring(luaState, i);
+
+            if (value === null) {
+              values.push("nil");
+            } else {
+              values.push(to_jsstring(value));
+            }
           }
 
           printedOutput += values.join("\t") + "\n";
           return 0;
         });
 
-        lua.lua_setglobal(state, to_luastring("print"));
+        lua.lua_setglobal(
+          state,
+          to_luastring("print")
+        );
 
-        const result = lauxlib.luaL_loadstring(
+        // Compile the Lua code.
+        const loadResult = lauxlib.luaL_loadstring(
           state,
           to_luastring(code)
         );
 
-        if (result !== lua.LUA_OK) {
-          const errorMessage = fengari.lua_tojsstring(state, -1);
+        if (loadResult !== lua.LUA_OK) {
+          const errorValue = lua.lua_tostring(state, -1);
+          const errorMessage = errorValue
+            ? to_jsstring(errorValue)
+            : "Unknown Lua syntax error.";
+
           throw new Error(errorMessage);
         }
 
+        // Run the compiled Lua code.
         const runResult = lua.lua_pcall(
           state,
           0,
@@ -188,12 +198,17 @@ print("The answer is: " .. number)</textarea>
         );
 
         if (runResult !== lua.LUA_OK) {
-          const errorMessage = fengari.lua_tojsstring(state, -1);
+          const errorValue = lua.lua_tostring(state, -1);
+          const errorMessage = errorValue
+            ? to_jsstring(errorValue)
+            : "Unknown Lua runtime error.";
+
           throw new Error(errorMessage);
         }
 
         output.className = "success";
-        output.textContent = printedOutput || "Lua finished successfully with no output.";
+        output.textContent =
+          printedOutput || "Lua finished successfully with no output.";
       } catch (error) {
         output.className = "error";
         output.textContent = "Lua Error:\n" + error.message;
