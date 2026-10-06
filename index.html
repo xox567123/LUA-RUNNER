@@ -146,6 +146,21 @@
       color: #8893a3;
       font-size: 13px;
     }
+
+    .vba-help {
+      display: none;
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid #354052;
+      border-radius: 8px;
+      background: #181d27;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    .vba-help strong {
+      color: #66d9ef;
+    }
   </style>
 </head>
 
@@ -173,12 +188,22 @@
       <button class="tab" data-language="html">
         HTML Preview
       </button>
+
+      <button class="tab" data-language="vba">
+        VBA
+      </button>
     </div>
 
     <textarea id="codeEditor"></textarea>
 
     <div class="language-note" id="languageNote">
       JavaScript runs directly in your browser.
+    </div>
+
+    <div class="vba-help" id="vbaHelp">
+      <strong>VBA note:</strong>
+      VBA cannot run directly inside a normal web browser. This runner sends your VBA code to the
+      OneCompiler API for execution. You may need to allow the request when prompted.
     </div>
 
     <button id="runButton">Run Code</button>
@@ -202,6 +227,7 @@
     const output = document.getElementById("output");
     const htmlPreview = document.getElementById("htmlPreview");
     const languageNote = document.getElementById("languageNote");
+    const vbaHelp = document.getElementById("vbaHelp");
     const tabs = document.querySelectorAll(".tab");
 
     let currentLanguage = "javascript";
@@ -245,7 +271,15 @@ print("The answer is:", number)`,
   <h1>Hello from HTML!</h1>
   <p>This page is being previewed inside the runner.</p>
 </body>
-</html>`
+</html>`,
+
+      vba: `Sub Main()
+    Dim number As Integer
+    number = 10 + 5
+
+    Debug.Print "Hello from VBA!"
+    Debug.Print "The answer is: " & number
+End Sub`
     };
 
     codeEditor.value = starterCode.javascript;
@@ -278,6 +312,7 @@ print("The answer is:", number)`,
 
       htmlPreview.style.display = "none";
       output.style.display = "block";
+      vbaHelp.style.display = "none";
 
       if (language === "javascript") {
         languageNote.textContent =
@@ -291,6 +326,10 @@ print("The answer is:", number)`,
       } else if (language === "html") {
         languageNote.textContent =
           "HTML is shown in the preview window below.";
+      } else if (language === "vba") {
+        languageNote.textContent =
+          "VBA is executed remotely using the OneCompiler API.";
+        vbaHelp.style.display = "block";
       }
     }
 
@@ -299,6 +338,7 @@ print("The answer is:", number)`,
       if (language === "lua") return "Lua";
       if (language === "python") return "Python";
       if (language === "html") return "HTML";
+      if (language === "vba") return "VBA";
       return language;
     }
 
@@ -316,14 +356,24 @@ print("The answer is:", number)`,
         return;
       }
 
-      if (currentLanguage === "javascript") {
-        runJavaScript(code);
-      } else if (currentLanguage === "lua") {
-        runLua(code);
-      } else if (currentLanguage === "python") {
-        await runPython(code);
-      } else if (currentLanguage === "html") {
-        runHTML(code);
+      runButton.disabled = true;
+      runButton.textContent = "Running...";
+
+      try {
+        if (currentLanguage === "javascript") {
+          runJavaScript(code);
+        } else if (currentLanguage === "lua") {
+          runLua(code);
+        } else if (currentLanguage === "python") {
+          await runPython(code);
+        } else if (currentLanguage === "html") {
+          runHTML(code);
+        } else if (currentLanguage === "vba") {
+          await runVBA(code);
+        }
+      } finally {
+        runButton.disabled = false;
+        runButton.textContent = "Run Code";
       }
     }
 
@@ -528,6 +578,135 @@ print("The answer is:", number)`,
       output.style.display = "none";
       htmlPreview.style.display = "block";
       htmlPreview.srcdoc = code;
+    }
+
+    async function runVBA(code) {
+      output.className = "info";
+      output.textContent = "Sending VBA code to the compiler...";
+
+      try {
+        const response = await fetch("https://onecompiler.com/api/code/exec", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            language: "vb.net",
+            stdin: "",
+            files: [
+              {
+                name: "Main.vb",
+                content: convertVBAToVBNet(code)
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            "The VBA compiler request failed with status " +
+            response.status +
+            "."
+          );
+        }
+
+        const result = await response.json();
+
+        const stdout =
+          result.stdout ||
+          result.output ||
+          "";
+
+        const stderr =
+          result.stderr ||
+          result.error ||
+          "";
+
+        const compilationErrors =
+          result.exception ||
+          result.compilationError ||
+          "";
+
+        let finalOutput = "";
+
+        if (stdout) {
+          finalOutput += stdout;
+        }
+
+        if (stderr) {
+          finalOutput +=
+            (finalOutput ? "\n" : "") +
+            stderr;
+        }
+
+        if (compilationErrors) {
+          finalOutput +=
+            (finalOutput ? "\n" : "") +
+            compilationErrors;
+        }
+
+        output.className =
+          compilationErrors || stderr
+            ? "error"
+            : "success";
+
+        output.textContent =
+          finalOutput.trim() ||
+          "VBA finished successfully with no output.";
+      } catch (error) {
+        output.className = "error";
+        output.textContent =
+          "VBA Error:\n" +
+          error.message +
+          "\n\nVBA normally requires Microsoft Excel or another VBA-compatible program. This browser runner uses a remote VB.NET compiler as a compatibility option.";
+      }
+    }
+
+    function convertVBAToVBNet(code) {
+      let convertedCode = code;
+
+      convertedCode = convertedCode.replace(
+        /^\s*Option\s+Explicit\s*$/gim,
+        ""
+      );
+
+      convertedCode = convertedCode.replace(
+        /^\s*Attribute[\s\S]*$/gim,
+        ""
+      );
+
+      convertedCode = convertedCode.replace(
+        /^\s*Sub\s+Main\s*\(\s*\)\s*$/gim,
+        "Module Program\n    Sub Main()"
+      );
+
+      convertedCode = convertedCode.replace(
+        /^\s*End\s+Sub\s*$/gim,
+        "    End Sub\nEnd Module"
+      );
+
+      convertedCode = convertedCode.replace(
+        /^\s*Debug\.Print\s+/gim,
+        "        Console.WriteLine("
+      );
+
+      convertedCode = convertedCode.replace(
+        /^(        Console\.WriteLine\(.+)$/gim,
+        "$1)"
+      );
+
+      if (
+        !/^\s*Module\s+/im.test(convertedCode) &&
+        /^\s*Sub\s+/im.test(convertedCode)
+      ) {
+        convertedCode =
+          "Module Program\n" +
+          "    " +
+          convertedCode.trim().replace(/\n/g, "\n    ") +
+          "\nEnd Module";
+      }
+
+      return convertedCode.trim();
     }
   </script>
 </body>
