@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lua Runner</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #10131a;
+      color: #f5f7fa;
+      font-family: Arial, sans-serif;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: auto;
+    }
+
+    h1 {
+      margin-top: 0;
+      color: #66d9ef;
+    }
+
+    .description {
+      color: #aeb7c4;
+      margin-bottom: 20px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 360px;
+      resize: vertical;
+      padding: 16px;
+      border: 1px solid #354052;
+      border-radius: 10px;
+      background: #181d27;
+      color: #f8f8f2;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 15px;
+      line-height: 1.5;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: #66d9ef;
+    }
+
+    button {
+      margin-top: 14px;
+      padding: 12px 22px;
+      border: none;
+      border-radius: 8px;
+      background: #66d9ef;
+      color: #10131a;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #8be9fd;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .output-title {
+      margin-top: 28px;
+      margin-bottom: 8px;
+      color: #a6e22e;
+    }
+
+    pre {
+      min-height: 150px;
+      margin: 0;
+      padding: 16px;
+      border-radius: 10px;
+      background: #080a0f;
+      border: 1px solid #354052;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      font-family: Consolas, Monaco, monospace;
+      color: #f8f8f2;
+    }
+
+    .error {
+      color: #ff6b6b;
+    }
+
+    .success {
+      color: #a6e22e;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Lua Code Runner</h1>
+
+    <p class="description">
+      Type Lua code below, click Run Lua, and view the output or any errors.
+    </p>
+
+    <textarea id="luaCode">print("Hello from Lua!")
+
+local number = 10 + 5
+print("The answer is: " .. number)</textarea>
+
+    <br />
+
+    <button id="runButton">Run Lua</button>
+
+    <h2 class="output-title">Output</h2>
+    <pre id="output">Click "Run Lua" to run your code.</pre>
+  </div>
+
+  <!-- Fengari runs Lua inside the browser -->
+  <script src="https://unpkg.com/fengari-web/dist/fengari-web.js"></script>
+
+  <script>
+    const luaCode = document.getElementById("luaCode");
+    const runButton = document.getElementById("runButton");
+    const output = document.getElementById("output");
+
+    runButton.addEventListener("click", runLua);
+
+    function runLua() {
+      const code = luaCode.value;
+      let printedOutput = "";
+
+      output.className = "";
+      output.textContent = "";
+
+      try {
+        const lua = fengari.lua;
+        const lauxlib = fengari.lauxlib;
+        const lualib = fengari.lualib;
+        const to_luastring = fengari.to_luastring;
+
+        const state = lauxlib.luaL_newstate();
+
+        if (!state) {
+          throw new Error("Could not create the Lua state.");
+        }
+
+        lualib.luaL_openlibs(state);
+
+        // Replace Lua's print function so its output appears on the page.
+        lua.lua_pushjsfunction(state, function (state) {
+          const argumentCount = lua.lua_gettop(state);
+          const values = [];
+
+          for (let i = 1; i <= argumentCount; i++) {
+            values.push(
+              fengari.lua_tojsstring(state, i)
+            );
+          }
+
+          printedOutput += values.join("\t") + "\n";
+          return 0;
+        });
+
+        lua.lua_setglobal(state, to_luastring("print"));
+
+        const result = lauxlib.luaL_loadstring(
+          state,
+          to_luastring(code)
+        );
+
+        if (result !== lua.LUA_OK) {
+          const errorMessage = fengari.lua_tojsstring(state, -1);
+          throw new Error(errorMessage);
+        }
+
+        const runResult = lua.lua_pcall(
+          state,
+          0,
+          lua.LUA_MULTRET,
+          0
+        );
+
+        if (runResult !== lua.LUA_OK) {
+          const errorMessage = fengari.lua_tojsstring(state, -1);
+          throw new Error(errorMessage);
+        }
+
+        output.className = "success";
+        output.textContent = printedOutput || "Lua finished successfully with no output.";
+      } catch (error) {
+        output.className = "error";
+        output.textContent = "Lua Error:\n" + error.message;
+      }
+    }
+  </script>
+</body>
+</html>
